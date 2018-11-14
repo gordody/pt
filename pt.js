@@ -6,8 +6,8 @@
 
 class Card {
   constructor(font, size, coords, cardData) {
-    this.font = font;
-    this.group = new THREE.Group();
+    this._font = font;
+    this._geomGroup = new THREE.Group();
 
     this._pos = coords;
     // this._rot = undefined;
@@ -15,7 +15,7 @@ class Card {
     this._height = size.height;
     this._width = size.width;
 
-    this._textColor = 0x000000;
+    this._textColor = 0x006699;
 
     this._number = cardData.number;
     this._atomicMass = cardData.atomic_mass;
@@ -36,7 +36,7 @@ class Card {
     mesh.rotation.set(rx, ry, rz);
     mesh.scale.set(s, s, s);
 
-    this.group.add(mesh);
+    this._geomGroup.add(mesh);
   }
 
   roundedRect(ctx, x, y, width, height, radius) {
@@ -58,16 +58,16 @@ class Card {
   }
 
   addText(message, x, y, size) {
-    const color = 0x006699;
+    const color = this._textColor;
 
     const matLite = new THREE.MeshBasicMaterial({
       color: color,
       transparent: true,
       opacity: 0.4,
-      side: THREE.DoubleSide
+      side: THREE.FrontSide
     });
 
-    const shapes = this.font.generateShapes(message, size);
+    const shapes = this._font.generateShapes(message, size);
     const geometry = new THREE.ShapeBufferGeometry(shapes);
     geometry.computeBoundingBox();
 
@@ -77,7 +77,7 @@ class Card {
     const text = new THREE.Mesh(geometry, matLite);
     text.position.z = 1;
 
-    this.group.add(text);
+    this._geomGroup.add(text);
   }
 
   draw() {
@@ -88,22 +88,33 @@ class Card {
     this.addText(this._name, this._width * 0.5, this._height * 0.19, this._height * 0.075);
     this.addText('' + this._atomicMass, this._width * 0.5, this._height * 0.075, this._height * 0.075);
 
-    this.group.translateX(this._pos.x);
-    this.group.translateY(this._pos.y);
+    this._geomGroup.translateX(this._pos.x);
+    this._geomGroup.translateY(this._pos.y);
+  }
+
+  focus() {
+
+  }
+
+  rotate() {
+
   }
 }
 
 class PeriodicTable {
   constructor() {
-    this.camera = undefined;
-    this.scene = undefined;
-    this.renderer = undefined;
-    this.font = undefined;
+    this._camera = undefined;
+    this._scene = undefined;
+    this._renderer = undefined;
+    this._font = undefined;
+    this._raycaster = new THREE.Raycaster();
+    this._selected = undefined;
 
-    this.ptData = undefined;
+    this._ptData = undefined;
 
-    this.cardsByNumber = {};
-    this.cardsGroup = new THREE.Group();
+    this._cardsByNumber = {};
+    this._cardsByGuid = {};
+    this._cardsGroup = new THREE.Group();
   }
 
   async getData() {
@@ -119,26 +130,26 @@ class PeriodicTable {
   }
 
   initCamera() {
-    const box = new THREE.Box3().setFromObject(this.cardsGroup);
+    const box = new THREE.Box3().setFromObject(this._cardsGroup);
     const xMid = 0.5 * (box.max.x - box.min.x);
     const yMid = -0.5 * (box.max.y - box.min.y);
 
-    this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100000);
-    this.camera.position.set(xMid, yMid, 5000);
-    const controls = new THREE.OrbitControls(this.camera);
+    this._camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100000);
+    this._camera.position.set(xMid, yMid, 5000);
+    const controls = new THREE.OrbitControls(this._camera);
     controls.target.set(xMid, yMid, 0);
     controls.update();
   }
 
   initScene() {
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf0f0f0); // 0x000000
-    this.scene.add(this.cardsGroup);
+    this._scene = new THREE.Scene();
+    this._scene.background = new THREE.Color(0xf0f0f0); // 0x000000
+    this._scene.add(this._cardsGroup);
   }
 
   async initFonts() {
     const fontLoader = new THREE.FontLoader();
-    this.font = await new Promise((resolve, reject) => {
+    this._font = await new Promise((resolve, reject) => {
       fontLoader.load('fonts/helvetiker_regular.typeface.json',
         font => { resolve(font); },
         (url, itemsLoaded, itemsTotal) => { console.log('Loading font from', url, itemsLoaded, itemsTotal); },
@@ -148,33 +159,63 @@ class PeriodicTable {
   }
 
   initRenderer() {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this._renderer = new THREE.WebGLRenderer({ antialias: true });
+    this._renderer.setPixelRatio(window.devicePixelRatio);
+    this._renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
   async init() {
-    this.ptData = await this.getData();
+    this._ptData = await this.getData();
 
     // this.initCamera();
     this.initScene();
     await this.initFonts();
     this.initRenderer();
 
-    document.body.appendChild(this.renderer.domElement);
+    document.body.appendChild(this._renderer.domElement);
     window.addEventListener('resize', this.onWindowResize.bind(this), false);
+    this._renderer.domElement.addEventListener('click', this.onDocumentMouseClick.bind(this), false);
   }
 
   addCard(card) {
     card.draw();
-    this.cardsByNumber[card._number] = card;
-    this.cardsGroup.add(card.group);
+    this._cardsByNumber[card._number] = card;
+    this._cardsByGuid[card._geomGroup.uuid] = card;
+    this._cardsGroup.add(card._geomGroup);
   }
 
   onWindowResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this._camera.aspect = window.innerWidth / window.innerHeight;
+    this._camera.updateProjectionMatrix();
+    this._renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  onDocumentMouseClick(event) {
+    event.preventDefault();
+
+    const elem = this._renderer.domElement;
+    const rect = elem.getBoundingClientRect();
+
+    const mouse = new THREE.Vector2();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    const offset = new THREE.Vector3();
+    const plane = new THREE.Plane();
+    const intersection = new THREE.Vector3();
+
+    this._raycaster.setFromCamera(mouse, this._camera);
+    const intersects = this._raycaster.intersectObjects(this._scene.children, true);
+    if (intersects.length > 0) {
+      this._selected = intersects[0].object;
+      if (this._raycaster.ray.intersectPlane(plane, intersection)) {
+        offset.copy(intersection).sub(this._selected.position);
+        const card = this._cardsByGuid[this._selected.parent.uuid];
+        console.log('Card clicked:', card._name);
+        // TODO: focus, then flip
+        // TODO: Cobalt?!
+      }
+    }
   }
 
   animate() {
@@ -183,7 +224,7 @@ class PeriodicTable {
   }
 
   render() {
-    this.renderer.render(this.scene, this.camera);
+    this._renderer.render(this._scene, this._camera);
   }
 }
 
@@ -193,13 +234,13 @@ function main() {
   periodicTable.init().then(() => {
     const spacing = 10;
     const size = { height: 162, width: 120 };
-    periodicTable.ptData.elements.forEach(element => {
+    periodicTable._ptData.elements.forEach(element => {
       const coords = {
         x: element.xpos * (size.width + spacing),
         y: -element.ypos * (size.height + spacing),
         z: 100
       };
-      const card = new Card(periodicTable.font, size, coords, element);
+      const card = new Card(periodicTable._font, size, coords, element);
       periodicTable.addCard(card);
     });
     periodicTable.initCamera();
