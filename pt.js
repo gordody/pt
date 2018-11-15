@@ -1,4 +1,4 @@
-/* global fetch, THREE */
+/* global fetch, THREE, TWEEN */
 
 //
 // preiodic table with three js
@@ -9,6 +9,7 @@ class Card {
     this._font = font;
     this._geomGroup = new THREE.Group();
 
+    this._controls = undefined;
     this._pos = coords;
     // this._rot = undefined;
 
@@ -54,7 +55,7 @@ class Card {
   addRoundedRect() {
     const roundedRectShape = new THREE.Shape();
     this.roundedRect(roundedRectShape, 0, 0, this._width, this._height, 5);
-    this.addShape(roundedRectShape, 0x006699, 0, 0, 0, 0, 0, 0, 1);
+    this.addShape(roundedRectShape, 0x006699, -this._width / 2, -this._height / 2, 0, 0, 0, 0, 1);
   }
 
   addText(message, x, y, size) {
@@ -71,8 +72,9 @@ class Card {
     const geometry = new THREE.ShapeBufferGeometry(shapes);
     geometry.computeBoundingBox();
 
-    const xMid = -0.5 * (geometry.boundingBox.max.x - geometry.boundingBox.min.x);
-    geometry.translate(x + xMid, y, 0);
+    const xMid = 0.5 * (geometry.boundingBox.max.x - geometry.boundingBox.min.x);
+    // const yMid = -0.5 * (geometry.boundingBox.max.y - geometry.boundingBox.min.y);
+    geometry.translate(x - this._width / 2 - xMid / 2, y - this._height / 2, 0);
     // make shape ( N.B. edge view not visible )
     const text = new THREE.Mesh(geometry, matLite);
     text.position.z = 1;
@@ -111,6 +113,7 @@ class PeriodicTable {
     this._selected = undefined;
 
     this._ptData = undefined;
+    this._focusedCameraPos = undefined;
 
     this._cardsByNumber = {};
     this._cardsByGuid = {};
@@ -136,9 +139,14 @@ class PeriodicTable {
 
     this._camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100000);
     this._camera.position.set(xMid, yMid, 5000);
-    const controls = new THREE.OrbitControls(this._camera);
-    controls.target.set(xMid, yMid, 0);
-    controls.update();
+
+    this.initControls({ x: xMid, y: yMid });
+  }
+
+  initControls(target) {
+    this._controls = new THREE.OrbitControls(this._camera);
+    this._controls.target.set(target.x, target.y, 0);
+    this._controls.update();
   }
 
   initScene() {
@@ -175,6 +183,7 @@ class PeriodicTable {
     document.body.appendChild(this._renderer.domElement);
     window.addEventListener('resize', this.onWindowResize.bind(this), false);
     this._renderer.domElement.addEventListener('click', this.onDocumentMouseClick.bind(this), false);
+    this._renderer.domElement.addEventListener('touchend', this.onDocumentMouseClick.bind(this), false);
   }
 
   addCard(card) {
@@ -193,6 +202,8 @@ class PeriodicTable {
   onDocumentMouseClick(event) {
     event.preventDefault();
 
+    console.log('Got mouse click:', event.clientX, event.clientY);
+
     const elem = this._renderer.domElement;
     const rect = elem.getBoundingClientRect();
 
@@ -200,26 +211,74 @@ class PeriodicTable {
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    const offset = new THREE.Vector3();
-    const plane = new THREE.Plane();
-    const intersection = new THREE.Vector3();
-
     this._raycaster.setFromCamera(mouse, this._camera);
     const intersects = this._raycaster.intersectObjects(this._scene.children, true);
     if (intersects.length > 0) {
       this._selected = intersects[0].object;
-      if (this._raycaster.ray.intersectPlane(plane, intersection)) {
-        offset.copy(intersection).sub(this._selected.position);
-        const card = this._cardsByGuid[this._selected.parent.uuid];
-        console.log('Card clicked:', card._name);
-        // TODO: focus, then flip
-        // TODO: Cobalt?!
+      const card = this._cardsByGuid[this._selected.parent.uuid];
+      console.log('Card clicked:', card._name);
+      if (!this._focusedCameraPos ||
+        (this._focusedCameraPos.x !== this._camera.position.x &&
+         this._focusedCameraPos.y !== this._camera.position.y &&
+         this._focusedCameraPos.z !== this._camera.position.z)) {
+        this._focusedCameraPos = this._camera.position;
+        this.focusOnCard(card);
+      } else {
+        this.flipCard(card);
       }
     }
   }
 
+  focusOnCard(card) {
+    const box = new THREE.Box3().setFromObject(card._geomGroup);
+    const xMid = 0.5 * (box.max.x - box.min.x);
+    const yMid = -0.5 * (box.max.y - box.min.y);
+
+    const position = {
+      x: box.min.x + xMid,
+      y: box.min.y - yMid,
+      z: 500
+    };
+    const target = {
+      x: box.min.x + xMid,
+      y: box.min.y - yMid,
+      z: 0
+    };
+
+    new TWEEN.Tween(this._camera.position)
+      .to(position, 1000)
+      .easing(TWEEN.Easing.Sinusoidal.InOut)
+      .start();
+
+    new TWEEN.Tween(this._controls.target)
+      .to(target, 1000)
+      .onUpdate(() => {
+        this._controls.update();
+      })
+      .easing(TWEEN.Easing.Sinusoidal.InOut)
+      .onComplete(() => {
+        this._controls.update();
+      })
+      .start();
+  }
+
+  flipCard(card) {
+    const rot = { angle: 0 };
+    let prevAngle = 0;
+    new TWEEN.Tween(rot)
+      .to({ angle: Math.PI }, 1000)
+      .onUpdate(({ angle }) => {
+        card._geomGroup.rotateY(angle - prevAngle);
+        prevAngle = angle;
+        console.log('Rotating card by', angle);
+      })
+      .easing(TWEEN.Easing.Sinusoidal.InOut)
+      .start();
+  }
+
   animate() {
     requestAnimationFrame(this.animate.bind(this));
+    TWEEN.update();
     this.render();
   }
 
