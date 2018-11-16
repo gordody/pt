@@ -12,6 +12,7 @@ class Card {
     this._controls = undefined;
     this._pos = coords;
     // this._rot = undefined;
+    this._isFlipped = false;
 
     this._height = size.height;
     this._width = size.width;
@@ -19,7 +20,7 @@ class Card {
     this._textColor = 0x006699;
 
     this._number = cardData.number;
-    this._atomicMass = cardData.atomic_mass;
+    this._atomicMass = cardData.atomic_mass.toFixed(2);
     this._name = cardData.name;
     this._symbol = cardData.symbol;
     this._discoverer = cardData.discovered_by;
@@ -74,10 +75,10 @@ class Card {
 
     const xMid = 0.5 * (geometry.boundingBox.max.x - geometry.boundingBox.min.x);
     // const yMid = -0.5 * (geometry.boundingBox.max.y - geometry.boundingBox.min.y);
-    geometry.translate(x - this._width / 2 - xMid / 2, y - this._height / 2, 0);
+    geometry.translate(x - this._width / 2 - xMid, y - this._height / 2, 0);
     // make shape ( N.B. edge view not visible )
     const text = new THREE.Mesh(geometry, matLite);
-    text.position.z = 1;
+    text.position.z = 5;
 
     this._geomGroup.add(text);
   }
@@ -93,14 +94,6 @@ class Card {
     this._geomGroup.translateX(this._pos.x);
     this._geomGroup.translateY(this._pos.y);
   }
-
-  focus() {
-
-  }
-
-  rotate() {
-
-  }
 }
 
 class PeriodicTable {
@@ -110,10 +103,10 @@ class PeriodicTable {
     this._renderer = undefined;
     this._font = undefined;
     this._raycaster = new THREE.Raycaster();
-    this._selected = undefined;
+    this._focusedCard = undefined;
+    this._selectedCard = undefined;
 
     this._ptData = undefined;
-    this._focusedCameraPos = undefined;
 
     this._cardsByNumber = {};
     this._cardsByGuid = {};
@@ -214,17 +207,27 @@ class PeriodicTable {
     this._raycaster.setFromCamera(mouse, this._camera);
     const intersects = this._raycaster.intersectObjects(this._scene.children, true);
     if (intersects.length > 0) {
-      this._selected = intersects[0].object;
-      const card = this._cardsByGuid[this._selected.parent.uuid];
-      console.log('Card clicked:', card._name);
-      if (!this._focusedCameraPos ||
-        (this._focusedCameraPos.x !== this._camera.position.x &&
-         this._focusedCameraPos.y !== this._camera.position.y &&
-         this._focusedCameraPos.z !== this._camera.position.z)) {
-        this._focusedCameraPos = this._camera.position;
-        this.focusOnCard(card);
+      const selectedObj = intersects[0].object;
+      const clickedCard = this._cardsByGuid[selectedObj.parent.uuid];
+      console.log('Card clicked:', clickedCard._name);
+      if (!this._focusedCard) {
+        this._focusedCard = clickedCard;
+        this.focusOnCard(this._focusedCard);
       } else {
-        this.flipCard(card);
+        if (clickedCard === this._focusedCard) {
+          this._selectedCard = this._focusedCard;
+          this.flipCard(this._selectedCard);
+        } else {
+          this.flipCard(this._selectedCard, true);
+          this._focusedCard = clickedCard;
+          this.focusOnCard(this._focusedCard);
+        }
+      }
+    } else {
+      if (this._selectedCard) {
+        this.flipCard(this._selectedCard, true);
+        this._selectedCard = undefined;
+        this._focusedCard = undefined;
       }
     }
   }
@@ -262,18 +265,28 @@ class PeriodicTable {
       .start();
   }
 
-  flipCard(card) {
-    const rot = { angle: 0 };
+  flipCard(card, forceFront) {
+    if (!card || (forceFront && !card._isFlipped)) {
+      return;
+    }
+    let fromAngle = 0;
+    let toAngle = Math.PI;
+    if (card._isFlipped) {
+      fromAngle = Math.PI;
+      toAngle = 0;
+    }
+    const rot = { angle: fromAngle };
     let prevAngle = 0;
     new TWEEN.Tween(rot)
-      .to({ angle: Math.PI }, 1000)
+      .to({ angle: toAngle }, 1000)
       .onUpdate(({ angle }) => {
         card._geomGroup.rotateY(angle - prevAngle);
         prevAngle = angle;
-        console.log('Rotating card by', angle);
       })
       .easing(TWEEN.Easing.Sinusoidal.InOut)
       .start();
+
+    card._isFlipped = !card._isFlipped;
   }
 
   animate() {
