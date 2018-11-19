@@ -14,6 +14,12 @@ class Card {
     // this._rot = undefined;
     this._isFlipped = false;
 
+    this._windowResizeListener = undefined;
+    this._clickListener = undefined;
+    this._touchEndListener = undefined;
+
+    this._controlChangeEventListener = undefined;
+
     this._height = size.height;
     this._width = size.width;
 
@@ -66,7 +72,7 @@ class Card {
       color: color,
       transparent: true,
       opacity: 0.4,
-      side: THREE.FrontSide
+      side: THREE.FrontSide   // FrontSide or DoubleSide ?
     });
 
     const shapes = this._font.generateShapes(message, size);
@@ -78,7 +84,7 @@ class Card {
     geometry.translate(x - this._width / 2 - xMid, y - this._height / 2, 0);
     // make shape ( N.B. edge view not visible )
     const text = new THREE.Mesh(geometry, matLite);
-    text.position.z = 5;
+    text.position.z = 2;
 
     this._geomGroup.add(text);
   }
@@ -93,6 +99,33 @@ class Card {
 
     this._geomGroup.translateX(this._pos.x);
     this._geomGroup.translateY(this._pos.y);
+  }
+
+  flip(forceFront) {
+    if (forceFront && !this._isFlipped) {
+      return;
+    }
+    let fromAngle = 0;
+    let toAngle = Math.PI;
+    if (this._isFlipped) {
+      fromAngle = Math.PI;
+      toAngle = 0;
+    }
+    console.log('Flip from', fromAngle, 'to', toAngle)
+    const rot = { angle: fromAngle };
+    let prevAngle = fromAngle;
+    new TWEEN.Tween(rot)
+      .to({ angle: toAngle }, 1000)
+      .onUpdate(({ angle }) => {
+        const nextRot = angle - prevAngle;
+        // console.debug('flipping by', nextRot);
+        this._geomGroup.rotateY(nextRot);
+        prevAngle = angle;
+      })
+      .easing(TWEEN.Easing.Sinusoidal.InOut)
+      .start();
+
+    this._isFlipped = !this._isFlipped;
   }
 }
 
@@ -111,6 +144,14 @@ class PeriodicTable {
     this._cardsByNumber = {};
     this._cardsByGuid = {};
     this._cardsGroup = new THREE.Group();
+  }
+
+  destroy() {
+    this._controls.removeEventListener(this._controlChangeEventListener);
+
+    window.removeEventListener('resize', this._windowResizeListener, false);
+    this._renderer.domElement.removeEventListener('click', this._clickListener, false);
+    this._renderer.domElement.removeEventListener('touchend', this._touchEndListener, false);
   }
 
   async getData() {
@@ -138,8 +179,21 @@ class PeriodicTable {
 
   initControls(target) {
     this._controls = new THREE.OrbitControls(this._camera);
+    this._controls.enableDamping = true;
     this._controls.target.set(target.x, target.y, 0);
     this._controls.update();
+
+    this._controlChangeEventListener = this.controlChangeEventListener.bind(this);;
+    this._controls.addEventListener('end', this._controlChangeEventListener);
+  }
+
+  controlChangeEventListener({type}) {
+    console.debug('controlChangeEvent', type);
+    // this._focusedCard = undefined;
+    // if (this._selectedCard) {
+    //   this._selectedCard.flip(true);
+    //   this._selectedCard = undefined;
+    // }
   }
 
   initScene() {
@@ -174,9 +228,14 @@ class PeriodicTable {
     this.initRenderer();
 
     document.body.appendChild(this._renderer.domElement);
-    window.addEventListener('resize', this.onWindowResize.bind(this), false);
-    this._renderer.domElement.addEventListener('click', this.onDocumentMouseClick.bind(this), false);
-    this._renderer.domElement.addEventListener('touchend', this.onDocumentMouseClick.bind(this), false);
+
+    this._windowResizeListener = this.onWindowResize.bind(this);
+    this._clickListener = this.onDocumentMouseClick.bind(this);
+    this._touchEndListener = this.onDocumentMouseClick.bind(this);
+
+    window.addEventListener('resize', this._windowResizeListener, false);
+    this._renderer.domElement.addEventListener('click', this._clickListener, false);
+    this._renderer.domElement.addEventListener('touchend', this._touchEndListener, false);
   }
 
   addCard(card) {
@@ -210,22 +269,20 @@ class PeriodicTable {
       const selectedObj = intersects[0].object;
       const clickedCard = this._cardsByGuid[selectedObj.parent.uuid];
       console.log('Card clicked:', clickedCard._name);
-      if (!this._focusedCard) {
+      if (clickedCard !== this._focusedCard) {
+        if (this._selectedCard) {
+          this._selectedCard.flip(true);
+          this._selectedCard = undefined;
+        }
         this._focusedCard = clickedCard;
         this.focusOnCard(this._focusedCard);
       } else {
-        if (clickedCard === this._focusedCard) {
-          this._selectedCard = this._focusedCard;
-          this.flipCard(this._selectedCard);
-        } else {
-          this.flipCard(this._selectedCard, true);
-          this._focusedCard = clickedCard;
-          this.focusOnCard(this._focusedCard);
-        }
+        this._selectedCard = this._focusedCard;
+        this._selectedCard.flip();
       }
     } else {
       if (this._selectedCard) {
-        this.flipCard(this._selectedCard, true);
+        this._selectedCard.flip(true);
         this._selectedCard = undefined;
         this._focusedCard = undefined;
       }
@@ -265,33 +322,10 @@ class PeriodicTable {
       .start();
   }
 
-  flipCard(card, forceFront) {
-    if (!card || (forceFront && !card._isFlipped)) {
-      return;
-    }
-    let fromAngle = 0;
-    let toAngle = Math.PI;
-    if (card._isFlipped) {
-      fromAngle = Math.PI;
-      toAngle = 0;
-    }
-    const rot = { angle: fromAngle };
-    let prevAngle = 0;
-    new TWEEN.Tween(rot)
-      .to({ angle: toAngle }, 1000)
-      .onUpdate(({ angle }) => {
-        card._geomGroup.rotateY(angle - prevAngle);
-        prevAngle = angle;
-      })
-      .easing(TWEEN.Easing.Sinusoidal.InOut)
-      .start();
-
-    card._isFlipped = !card._isFlipped;
-  }
-
   animate() {
     requestAnimationFrame(this.animate.bind(this));
     TWEEN.update();
+    this._controls.update();
     this.render();
   }
 
