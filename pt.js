@@ -139,12 +139,25 @@ class PeriodicTable {
     this._focusedCard = undefined;
     this._selectedCard = undefined;
 
-    this._ptData = undefined;
+    this._ptCoordArray = [];
+    this._pfCoordArray = [];
+
+    this._toolbarElem = undefined;
+    this._toolbarButtons = [];
 
     this._cardsByNumber = {};
     this._cardsByGuid = {};
     this._cardsGroup = new THREE.Group();
   }
+
+  setPtCoords(ptCoordArray) {
+    this._ptCoordArray = ptCoordArray;
+  }
+
+  setPfCoords(pfCoordArray) {
+    this._pfCoordArray = pfCoordArray;
+  }
+
 
   destroy() {
     this._controls.removeEventListener(this._controlChangeEventListener);
@@ -154,25 +167,17 @@ class PeriodicTable {
     this._renderer.domElement.removeEventListener('touchend', this._touchEndListener, false);
   }
 
-  async getData() {
-    let data;
-    try {
-      data = await fetch('lib/PeriodicTableJSON.json')
-        .then(response => response.json());
-    } catch (e) {
-      console.error('Error reading data', e, e.stack);
-      data = undefined;
-    }
-    return data;
-  }
-
   initCamera() {
+    // const cardsGroup = new THREE.Group();
+    // Object.values(this._cardsByGuid).forEach(card => cardsGroup.add(card._geomGroup));
+    // const box = new THREE.Box3().setFromObject(cardsGroup);
     const box = new THREE.Box3().setFromObject(this._cardsGroup);
     const xMid = 0.5 * (box.max.x - box.min.x);
     const yMid = -0.5 * (box.max.y - box.min.y);
+    const zMid = 0.5 * (box.max.z - box.min.z);
 
     this._camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100000);
-    this._camera.position.set(xMid, yMid, 5000);
+    this._camera.position.set(xMid, yMid, zMid - 1000);
 
     this.initControls({ x: xMid, y: yMid });
   }
@@ -219,9 +224,42 @@ class PeriodicTable {
     this._renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  async init() {
-    this._ptData = await this.getData();
+  toolbarClickHandler(evt) {
+    console.log('Button clicked', evt.target.id);
+    if (evt.target.getAttribute('id') === 'periodicTableModeButton') {
+      this.moveCards(this._ptCoordArray, Object.values(this._cardsByNumber));
+    } else if (evt.target.getAttribute('id') === 'paraflowModeButton') {
+      this.moveCards(this._pfCoordArray, Object.values(this._cardsByNumber));
+    } else {
 
+    }
+  }
+
+  initToolbar() {
+    this._toolbarClickHandler = this.toolbarClickHandler.bind(this);
+
+    this._toolbarElem = document.createElement('div');
+    this._toolbarElem.setAttribute('id', 'periodicTableToolbar');
+    this._toolbarElem.onclick = this._toolbarClickHandler;
+
+    this._periodicTableModeButton = document.createElement('div');
+    this._periodicTableModeButton.setAttribute('id', 'periodicTableModeButton');
+    this._periodicTableModeButton.setAttribute('class', 'toolbarButton');
+    this._periodicTableModeButton.innerHTML = 'PT';
+    this._toolbarButtons.push(this._periodicTableModeButton);
+
+    this._paraflowModeButton = document.createElement('div');
+    this._paraflowModeButton.setAttribute('id','paraflowModeButton');
+    this._paraflowModeButton.setAttribute('class','toolbarButton');
+    this._paraflowModeButton.innerHTML = 'PF';
+    this._toolbarButtons.push(this._paraflowModeButton);
+
+    this._toolbarButtons.forEach(button => this._toolbarElem.appendChild(button));
+    document.body.appendChild(this._toolbarElem);
+  }
+
+  async init() {
+    this.initToolbar();
     // this.initCamera();
     this.initScene();
     await this.initFonts();
@@ -322,6 +360,26 @@ class PeriodicTable {
       .start();
   }
 
+  moveCards(arrPositions, arrCards) {
+    const headTween = new TWEEN.Tween(arrCards[0]._geomGroup.position)
+      .to(arrPositions[0], 1000);
+
+    let currTween = headTween;
+    for (let i = 1; i < arrCards.length; i++) {
+      const newTween = new TWEEN.Tween(arrCards[i]._geomGroup.position)
+        .to(arrPositions[i], 1000);
+      currTween.onStart(obj => { 
+        newTween.start(); 
+      });
+      currTween = newTween;
+    }
+
+    headTween.start();
+    currTween.onComplete(() => {
+      this.initCamera();
+    });
+  }
+
   animate() {
     requestAnimationFrame(this.animate.bind(this));
     TWEEN.update();
@@ -334,22 +392,62 @@ class PeriodicTable {
   }
 }
 
+async function getPtData() {
+  let data;
+  try {
+    data = await fetch('lib/PeriodicTableJSON.json')
+      .then(response => response.json());
+  } catch (e) {
+    console.error('Error reading data', e, e.stack);
+    data = undefined;
+  }
+  return data;
+}
+
 // eslint-disable-next-line no-unused-vars
 function main() {
+  const ptCoordArray = [];
+  const pfCoordArray = [];
+  
+  const pfWidth = 6;
+  const pfHeight = 5;
+  const pfDepth = 4;
+
+  const origoCoords = { x: 0,  y: 0,  z: 0 };
+
   const periodicTable = new PeriodicTable();
-  periodicTable.init().then(() => {
-    const spacing = 10;
-    const size = { height: 162, width: 120 };
-    periodicTable._ptData.elements.forEach(element => {
-      const coords = {
-        x: element.xpos * (size.width + spacing),
-        y: -element.ypos * (size.height + spacing),
-        z: 100
-      };
-      const card = new Card(periodicTable._font, size, coords, element);
-      periodicTable.addCard(card);
+  
+  getPtData().then(ptData => {
+    periodicTable.init().then(() => {
+      const spacing = 10;
+      const size = { height: 162, width: 120 };
+      ptData.elements.forEach(element => {
+        const ptCoords = {
+          x: element.xpos * (size.width + spacing),
+          y: -element.ypos * (size.height + spacing),
+          z: 100
+        };
+        ptCoordArray.push(ptCoords);
+
+        let n = element.number - 1;
+        const pfCoords = {
+          x: (n % pfWidth) * (2 * size.width + spacing),
+          y: (Math.floor(n / pfWidth) % pfHeight) * (2 * size.height + spacing),
+          z: (Math.floor(n / (pfWidth * pfHeight)) % pfDepth) * 2 * size.width,
+        };
+        pfCoordArray.push(pfCoords);
+
+        // const card = new Card(periodicTable._font, size, ptCoords, element);
+        const card = new Card(periodicTable._font, size, origoCoords, element);
+        periodicTable.addCard(card);
+      });
+      periodicTable.setPtCoords(ptCoordArray);
+      periodicTable.setPfCoords(pfCoordArray);
+
+      periodicTable.initCamera();
+      periodicTable.animate();
+      periodicTable.moveCards(ptCoordArray, Object.values(periodicTable._cardsByNumber));
+      
     });
-    periodicTable.initCamera();
-    periodicTable.animate();
   });
 }
