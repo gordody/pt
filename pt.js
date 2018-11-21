@@ -172,21 +172,23 @@ class PeriodicTable {
     // Object.values(this._cardsByGuid).forEach(card => cardsGroup.add(card._geomGroup));
     // const box = new THREE.Box3().setFromObject(cardsGroup);
     const box = new THREE.Box3().setFromObject(this._cardsGroup);
-    const xMid = 0.5 * (box.max.x - box.min.x);
+    const xMid = 0.5 * (box.max.x - box.min.x) + box.min.x;
     const yMid = -0.5 * (box.max.y - box.min.y);
-    const zMid = 0.5 * (box.max.z - box.min.z);
+    const zMid = 0.5 * (box.max.z - box.min.z) + box.min.z;
 
     this._camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 100000);
-    this._camera.position.set(xMid, yMid, zMid - 1000);
+    this._camera.position.set(xMid, yMid, 1.5 * xMid / Math.tan(Math.PI * 45 / 2 / 180));
+    console.log('camera position', this._camera.position);
 
-    this.initControls({ x: xMid, y: yMid });
+    this.initControls({ x: xMid, y: yMid, z: 0 });
   }
 
   initControls(target) {
     this._controls = new THREE.OrbitControls(this._camera);
     this._controls.enableDamping = true;
-    this._controls.target.set(target.x, target.y, 0);
+    this._controls.target.set(target.x, target.y, target.z);
     this._controls.update();
+    console.log('controls target', this._controls.target);
 
     this._controlChangeEventListener = this.controlChangeEventListener.bind(this);;
     this._controls.addEventListener('end', this._controlChangeEventListener);
@@ -226,13 +228,28 @@ class PeriodicTable {
 
   toolbarClickHandler(evt) {
     console.log('Button clicked', evt.target.id);
-    if (evt.target.getAttribute('id') === 'periodicTableModeButton') {
-      this.moveCards(this._ptCoordArray, Object.values(this._cardsByNumber));
-    } else if (evt.target.getAttribute('id') === 'paraflowModeButton') {
-      this.moveCards(this._pfCoordArray, Object.values(this._cardsByNumber));
-    } else {
-
+    switch(evt.target.getAttribute('id')) {
+      case 'periodicTableModeButton':
+        this.moveCards(this._ptCoordArray, Object.values(this._cardsByNumber));
+        break;
+      case 'paraflowModeButton':
+        this.moveCards(this._pfCoordArray, Object.values(this._cardsByNumber));
+        break;
+      case 'debugGetControlInfoButton':
+      console.log('Control info:', this._camera.position, this._controls.target);
+        break;
+      default:
+      break;
     }
+  }
+
+  addToolbarButton(id, label) {
+    const button = document.createElement('div');
+    button.setAttribute('id', id);
+    button.setAttribute('class', 'toolbarButton');
+    button.innerHTML = label;
+    this._toolbarButtons.push(button);
+
   }
 
   initToolbar() {
@@ -242,17 +259,9 @@ class PeriodicTable {
     this._toolbarElem.setAttribute('id', 'periodicTableToolbar');
     this._toolbarElem.onclick = this._toolbarClickHandler;
 
-    this._periodicTableModeButton = document.createElement('div');
-    this._periodicTableModeButton.setAttribute('id', 'periodicTableModeButton');
-    this._periodicTableModeButton.setAttribute('class', 'toolbarButton');
-    this._periodicTableModeButton.innerHTML = 'PT';
-    this._toolbarButtons.push(this._periodicTableModeButton);
-
-    this._paraflowModeButton = document.createElement('div');
-    this._paraflowModeButton.setAttribute('id','paraflowModeButton');
-    this._paraflowModeButton.setAttribute('class','toolbarButton');
-    this._paraflowModeButton.innerHTML = 'PF';
-    this._toolbarButtons.push(this._paraflowModeButton);
+    this.addToolbarButton('periodicTableModeButton', 'Periodic Table');
+    this.addToolbarButton('paraflowModeButton', 'Paraflow');
+    this.addToolbarButton('debugGetControlInfoButton', 'ControlInfo');
 
     this._toolbarButtons.forEach(button => this._toolbarElem.appendChild(button));
     document.body.appendChild(this._toolbarElem);
