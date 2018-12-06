@@ -132,4 +132,24 @@ class Card {
     return new TWEEN.Tween(this._geomGroup.position)
       .to(toPosition, msDuration || 1000);
   }
+
+  getCurrLookAt() {
+    const box = new THREE.Box3().setFromObject(this._geomGroup);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const a = new THREE.Vector3(box.max.x - box.min.x, box.min.y, box.min.z);
+    const b = new THREE.Vector3(box.min.x, box.max.y - box.min.y, box.min.z);
+
+    // currLookAt = center + (a x b)
+    return center.add(a.cross(b));
+  }
+
+  lookAt(toPoint, msDuration) {
+    const currLookAt = this.getCurrLookAt();
+    return new TWEEN.Tween(currLookAt)
+      .onUpdate(vec => {
+        this._geomGroup.lookAt(vec);
+      })
+      .to(toPoint, msDuration || 1000);
+  }
 }

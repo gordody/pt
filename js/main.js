@@ -16,6 +16,7 @@ function main() {
   const ptCoordArray = [];
   const pfCoordArray = [];
   const sphereCoordArray = [];
+  const sphereLookAtCoordArray = [];
   
   const spacing = 10;
   const size = { height: 162, width: 120 };
@@ -73,12 +74,15 @@ function main() {
         const sphereCoords = {
           x: vec3.x,
           y: vec3.y,
-          z: vec3.z,
-          lookAtX: 0,
-          lookAtY: 0,
-          lookAtZ: 0,
+          z: vec3.z
+        };
+        const sphereLookAtCoords = {
+          x: 0,
+          y: 0,
+          z: 0
         };
         sphereCoordArray.push(sphereCoords);
+        sphereLookAtCoordArray.push(sphereLookAtCoords);
 
         // const card = new Card(periodicTable._font, size, ptCoords, element);
         const card = new Card(periodicTable._font, size, origoCoords, element);
@@ -88,6 +92,7 @@ function main() {
       periodicTable.setCoordsForMode(ptCoordArray, 'periodicTableMode');
       periodicTable.setCoordsForMode(pfCoordArray, 'paraflowMode');
       periodicTable.setCoordsForMode(sphereCoordArray, 'sphereMode');
+      periodicTable.setLookAtTargetCoordsForMode(sphereLookAtCoordArray, 'sphereMode');
 
       periodicTable.initCamera();
       periodicTable.animate();

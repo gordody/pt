@@ -16,6 +16,7 @@ class PeriodicTable {
 
     this._mode = undefined;
     this._coordArrays = {};
+    this._lookAtCoordArrays = {};
 
     this._cardsByNumber = {};
     this._cardsByGuid = {};
@@ -24,6 +25,10 @@ class PeriodicTable {
 
   setCoordsForMode(coordArray, mode) {
     this._coordArrays[mode] = coordArray;
+  }
+
+  setLookAtTargetCoordsForMode(coordArray, mode) {
+    this._lookAtCoordArrays[mode] = coordArray;
   }
 
   destroy() {
@@ -162,9 +167,8 @@ class PeriodicTable {
 
   focusAllCards() {
     const box = new THREE.Box3().setFromObject(this._cardsGroup);
-    const xMid = 0.5 * (box.max.x - box.min.x) + box.min.x;
-    const yMid = 0.5 * (box.max.y - box.min.y) + box.min.y;
-    const zMid = 0.5 * (box.max.z - box.min.z) + box.min.z;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
 
     this._camera.fov = 45;
     this._camera.aspect = window.innerWidth / window.innerHeight;
@@ -172,13 +176,13 @@ class PeriodicTable {
     this._camera.far = 1000000;
 
     const position = {
-      x: xMid,
-      y: yMid,
-      z: 1.5 * xMid / Math.tan(Math.PI * 45 / 2 / 180)
+      x: center.x,
+      y: center.y,
+      z: 1.5 * center.x / Math.tan(Math.PI * 45 / 2 / 180)
     };
     const target = {
-      x: xMid,
-      y: yMid,
+      x: center.x,
+      y: center.y,
       z: 0
     };
 
@@ -234,23 +238,47 @@ class PeriodicTable {
       .start();
   }
 
-  initCardPositions(arrPositions, arrCards) {
-    const headTween = new TWEEN.Tween(arrCards[0]._geomGroup.position)
-      .to(arrPositions[0], 1000);
+  initCardPositions(mode, arrCards) {
+    const arrPositions = this._coordArrays[mode];
+    if (!arrPositions) {
+      console.warn('initCardPositions: No coordinate array for mode', mode);
+    }
+    const arrLookAtCoords = this._lookAtCoordArrays[mode];
 
-    let currTween = headTween;
-    for (let i = 1; i < arrCards.length; i++) {
-      const newTween = arrCards[i].move(arrPositions[i]);
-      currTween.onStart(obj => { newTween.start(); });
-      currTween = newTween;
+    const headPosTween = new TWEEN.Tween(arrCards[0]._geomGroup.position)
+      .to(arrPositions[0], 1000);
+    
+    let headLookAtTween;
+    if (arrLookAtCoords) {
+      headLookAtTween = new TWEEN.Tween(arrCards[0].getCurrLookAt())
+        .to(arrLookAtCoords[0], 1000);
     }
 
-    // TODO: use lookAt here as well
+    let currPosTween = headPosTween;
+    let currLookAtTween = headLookAtTween;
+    for (let i = 1; i < arrCards.length; i++) {
+      const newPosTween = arrCards[i].move(arrPositions[i]);
+      currPosTween.onStart(obj => { 
+        newPosTween.start();
+      });
+      currPosTween = newPosTween;
 
-    headTween.start();
-    currTween.onComplete(() => {
+      if (arrLookAtCoords) {
+        const newLookAtTween = arrCards[i].lookAt(arrLookAtCoords[i]);
+        currLookAtTween.onStart(obj => { 
+          newLookAtTween.start();
+        });
+        currLookAtTween = newLookAtTween;
+      }
+    }
+
+    currPosTween.onComplete(() => {
       this.focusAllCards();
     });
+    headPosTween.start();
+    if (arrLookAtCoords) {
+      headLookAtTween.start();
+    }
   }
 
   animate() {
@@ -266,6 +294,6 @@ class PeriodicTable {
 
   // control interface
   setMode(mode) {
-    this.initCardPositions(this._coordArrays[mode], Object.values(this._cardsByNumber));
+    this.initCardPositions(mode, Object.values(this._cardsByNumber));
   }
 }
